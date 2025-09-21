@@ -1,9 +1,9 @@
-import os  # <-- CHANGE: Import the os module to access environment variables
+import os
+import time # <-- Make sure time is imported
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, flash
 from psycopg2.extras import RealDictCursor
 import psycopg2
 import threading
-import time
 from urllib.parse import quote_plus
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -12,20 +12,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from price_fetcher import update_all_prices, fetch_price
 
 app = Flask(__name__)
-# <-- CHANGE: Use an environment variable for the secret key for security.
-# Provide a default fallback for local development.
 app.secret_key = os.environ.get("SECRET_KEY", "a-secure-default-secret-key-for-dev")
 
-# <-- CHANGE: Database configuration now comes from a single DATABASE_URL environment variable.
-# This is the standard for production environments like Render, Heroku, etc.
-DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    # Fallback for local development if DATABASE_URL is not set
-    DATABASE_URL = "postgresql://postgres:admin@localhost/postgres"
-
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:admin@localhost/postgres")
 
 def get_db_connection():
-    # <-- CHANGE: Connect using the single DATABASE_URL string.
     conn = psycopg2.connect(DATABASE_URL)
     return conn
 
@@ -63,7 +54,7 @@ def create_tables():
         );
     """)
 
-    # Product Prices table (track vendor + price for product)
+    # Product Prices table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS product_prices (
             price_id SERIAL PRIMARY KEY,
@@ -73,7 +64,7 @@ def create_tables():
         );
     """)
 
-    # Alerts table (set alerts per product by user)
+    # Alerts table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS alerts (
             alert_id SERIAL PRIMARY KEY,
@@ -83,7 +74,7 @@ def create_tables():
         );
     """)
 
-    # Deals table (time-bound discounts from vendors)
+    # Deals table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS deals (
             deal_id SERIAL PRIMARY KEY,
@@ -100,7 +91,6 @@ def create_tables():
     conn.close()
 
 # Run table creation once
-# Note: On Render, this will be handled by the build.sh script to ensure it runs on every deploy.
 create_tables()
 
 # --- LOGIN REQUIRED DECORATOR ---
@@ -147,15 +137,11 @@ def register():
             return render_template("register.html")
         conn = get_db_connection()
         cur = conn.cursor()
-        # Check if user exists
         cur.execute("SELECT user_id FROM users WHERE user_name=%s OR email=%s", (username, email))
         if cur.fetchone():
             flash("Username or email already exists", "danger")
             cur.close(); conn.close()
             return render_template("register.html")
-        # Store hashed password
-        # Note: The ALTER TABLE command is fine here but ideally runs only once.
-        # The build script approach helps manage this.
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;")
         cur.execute(
             "INSERT INTO users (user_name, email, password_hash) VALUES (%s, %s, %s)",
@@ -234,7 +220,6 @@ def add_deal_page():
     return render_template('add_deal.html')
 
 # --- API ENDPOINTS ---
-# (The rest of the API endpoints remain unchanged as they correctly use get_db_connection())
 @app.route('/users', methods=['POST'])
 def add_user():
     data = request.get_json() or request.form
@@ -507,6 +492,11 @@ def search_products():
     return jsonify({"query": q, "results": results})
 
 def price_updater_loop(interval_seconds=300):
+    """Background loop: refresh all vendor prices every interval_seconds."""
+    # <-- CHANGE: Add a delay before the first run to allow the web server to start.
+    print("Background worker started. Waiting 15 seconds before first price update.")
+    time.sleep(15)
+    
     while True:
         try:
             print("Starting background price update...")
@@ -516,6 +506,7 @@ def price_updater_loop(interval_seconds=300):
             print(f"Price updater error: {e}")
         time.sleep(interval_seconds)
 
+# Start background updater (daemon)
 updater_thread = threading.Thread(target=price_updater_loop, args=(300,), daemon=True)
 updater_thread.start()
 
@@ -612,9 +603,6 @@ def add_deal():
 
 
 if __name__ == '__main__':
-    # <-- CHANGE: Make the app compatible with production servers (like Gunicorn)
-    # It will listen on 0.0.0.0 and use the PORT environment variable if available.
-    # Debug mode is also controlled by an environment variable for safety.
     debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() in ("true", "1", "t")
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
