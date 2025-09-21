@@ -7,17 +7,24 @@ Exports:
 import re
 import time
 from urllib.parse import urlparse
+import os  # <-- CHANGE: Import the os module
 
-# DB config (keep in sync with aplications.py)
-DB_HOST = "localhost"
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PASSWORD = "admin"
+# <-- CHANGE: Remove the old, hardcoded DB config.
+# DB_HOST = "localhost"
+# DB_NAME = "postgres"
+# DB_USER = "postgres"
+# DB_PASSWORD = "admin"
+
+# <-- CHANGE: Get the database connection string from the environment variable.
+# This ensures it works both locally (with a fallback) and on Render.
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:admin@localhost/postgres")
+
 
 # DB dependency imported lazily to avoid import-time errors in environments without psycopg2
 def get_db_connection():
     import psycopg2
-    return psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD)
+    # <-- CHANGE: Connect using the single DATABASE_URL string.
+    return psycopg2.connect(DATABASE_URL)
 
 def extract_number(text):
     if not text:
