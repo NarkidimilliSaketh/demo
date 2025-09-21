@@ -8,7 +8,7 @@
 {% block extra_js %}
 <script>
 document.getElementById("loadProducts").addEventListener("click", function(){
-  fetch("http://127.0.0.1:5000/products")
+  fetch("/products")
   .then(res => res.json())
   .then(data => {
     let html = '<div class="row">';
